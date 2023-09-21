@@ -1,4 +1,76 @@
+// Use "¬¬" and the search bar to navigate different sections of the code
+
 const mainDB = SpreadsheetApp.getActiveSpreadsheet();
+
+// ¬¬ UTILITIES 
+
+function isArrayOfArrays(array) {
+  return array.every(element => Array.isArray(element));
+};
+
+function zipArrays(mainArray, dataToAppend, dataIdentifier) {
+  const zippedArray = JSON.parse(JSON.stringify(mainArray));
+
+  if (mainArray.length != dataToAppend.length) {
+    throw new Error("Arrays must be same size in order to zip them!")
+  };
+
+  zippedArray.forEach((element, index) => {
+    element[dataIdentifier] = dataToAppend[index];
+  });
+
+  return zippedArray;
+};
+
+function removeAccents(inputString) {
+  const accentRegex = /[\u00E1\u00E9\u00ED\u00F3\u00FA]/g;
+  const accentMap = {
+    'á': 'a',
+    'é': 'e',
+    'í': 'i',
+    'ó': 'o',
+    'ú': 'u',
+    'Á': 'A',
+    'É': 'E',
+    'Í': 'I',
+    'Ó': 'O',
+    'Ú': 'U',
+  };
+
+  return inputString.replace(accentRegex, match => accentMap[match]);
+};
+
+function translateRoomNameToRoomNumber(roomNameString) {
+
+  function salaStringToNumber(inputString) {
+    const salaStringReference = [
+      "dummy index",
+      "primera",
+      "segunda",
+      "tercera",
+      "cuarta",
+      "quinta",
+      "sexta",
+      "septima",
+      "octava",
+      "novena",
+      "decima",
+      "undecima",
+      "duodecima",
+      "decimotercera",
+    ];
+    const salaNumber = salaStringReference.indexOf(inputString.toLowerCase());
+
+    return salaNumber;
+  };
+
+  const roomNameWithoutAccents = removeAccents(roomNameString);
+  const roomNumber = salaStringToNumber(roomNameWithoutAccents);
+
+  return roomNumber;
+};
+
+// ¬¬ WEB-SCRAPING - MAIN FUNCTIONALITY 
 
 /**
  * Retrieves court parameters data from a Google Sheets table and formats it into an array of objects.
@@ -16,16 +88,15 @@ const mainDB = SpreadsheetApp.getActiveSpreadsheet();
  * //   ...
  * // ]
  */
-
 function getCourtParameters() {
   // Get the 'Cortes' sheet
   const courtsTable = mainDB.getSheetByName('Cortes');
-  
+
   // Check if the sheet exists
   if (!courtsTable) {
     throw new Error('Sheet "Cortes" not found.');
   }
-  
+
   // Get all data from the sheet
   const courtsData = courtsTable.getDataRange().getValues();
 
@@ -39,14 +110,28 @@ function getCourtParameters() {
 
   // Map data into an array of objects
   const courtParameters = courtsData.map((court) => {
-    let courtObject = {};
+    let courtData = {};
     court.forEach((attribute, index) => {
-      courtObject[objectKeys[index]] = attribute;
+      courtData[objectKeys[index]] = attribute;
     });
-    return { courtObject };
+    return { courtData };
   });
 
   return courtParameters;
+};
+
+function extractParametersFromRoomsData(courtData) {
+  const fechaKey = 'fecha';
+  const salaKey = 'salaInt';
+
+  const uniqueDatesAndRooms = courtData.map((tribunal) => {
+    const uniqueDates = [...new Set(tribunal.map(room => room[fechaKey]))];
+    const activeSalas = [...new Set(tribunal.map(room => room[salaKey]))];
+
+    return { fechas: uniqueDates, salas: activeSalas };
+  });
+
+  return uniqueDatesAndRooms;
 };
 
 /**
@@ -56,17 +141,17 @@ function getCourtParameters() {
  * @returns {Array<Object>} An array of request objects for rooms.
  * @throws {Error} If the input is not an array or if required properties are missing.
  */
-function createRoomRequestsArray(courts) {
+function createRoomRequestsArray(courtParameters) {
   // Validate the input
-  if (!Array.isArray(courts)) {
+  if (!Array.isArray(courtParameters)) {
     throw new Error('Input must be an array of court objects.');
   }
 
   // Create an array to store room request objects
-  const roomRequestsArray = courts.map((element) => {
+  const roomRequestsArray = courtParameters.map((element) => {
     // Validate the court data object
     if (!element.courtData || typeof element.courtData !== 'object' ||
-        !element.courtData.codCorte || !element.courtData.condicion) {
+      !element.courtData.codCorte || !element.courtData.condicion) {
       throw new Error('Invalid court data object.');
     }
 
@@ -88,147 +173,9 @@ function createRoomRequestsArray(courts) {
   });
 
   return roomRequestsArray;
-}
-
-function getRoomsData(requestsArray) {
-  const rawResponses = asynchronouslyFetchRelatorData(requestsArray);
-  const processedResponses = cleanAndProcessRelatorData(rawResponses);
-
-  return processedResponses;
-}
-
-function asynchronouslyFetchRelatorData(arrayOfRequestObjects) {
-  // const arrayOfRequestObjects = relatorRequestsAndCourts.map((object) => object.request)
-  const rawResponses = UrlFetchApp.fetchAll(arrayOfRequestObjects);
-
-  return rawResponses;
 };
 
-function cleanAndProcessRelatorData(rawResponses) {
-  const textResponses = rawResponses.map((raw) => raw.getContentText());
-  const cleanRelatorResponses = cleanUpRelatorResponses(textResponses);
-
-  return cleanRelatorResponses;
-};
-
-function cleanUpRelatorResponses(arrayOfHTTPRelatorResponses) {
-  const cleanResponses = [];
-
-  function removeAccents(inputString) {
-    const accentRegex = /[\u00E1\u00E9\u00ED\u00F3\u00FA]/g;
-    const accentMap = {
-      'á': 'a',
-      'é': 'e',
-      'í': 'i',
-      'ó': 'o',
-      'ú': 'u'
-    };
-
-    return inputString.toLowerCase().replace(accentRegex, match => accentMap[match]);
-  };
-
-  function salaStringToNumber(salaString) {
-    const salaStringReference = [
-      "primera",
-      "segunda",
-      "tercera",
-      "cuarta",
-      "quinta",
-      "sexta",
-      "septima",
-      "octava",
-      "novena",
-      "decima",
-      "undecima",
-      "duodecima",
-      "decimotercera",
-    ];
-    const salaNumber = salaStringReference.indexOf(salaString) + 1;
-
-    return salaNumber;
-  };
-
-
-  arrayOfHTTPRelatorResponses.forEach((response) => {
-    const arrayOfRelatoresForCourt = [];
-    const cheeriodResponse = Cheerio.load(response);
-    let trimmedAndSplitResponse = cheeriodResponse('#dataTypeTable td').text().trim().split("\n");
-    for (let i = 0; i < trimmedAndSplitResponse.length; i += 5) {
-      const relatorObject = {
-        fecha: trimmedAndSplitResponse[i].trim(),
-        salaStr: trimmedAndSplitResponse[i + 2].trim(),
-        salaInt: salaStringToNumber(removeAccents(trimmedAndSplitResponse[i + 2].trim())),
-        relator: trimmedAndSplitResponse[i + 4].trim(),
-      };
-      arrayOfRelatoresForCourt.push(relatorObject);
-    };
-    cleanResponses.push(arrayOfRelatoresForCourt);
-  });
-
-  return cleanResponses;
-};
-
-function getCausasData(requestsArray) {
-  const rawResponses = asynchronouslyFetchCausasData(requestsArray);
-  const processedResponses = cleanUpCausasResponses(rawResponses);
-
-  return processedResponses; 
-};
-
-
-
-function cleanUpCausasResponses(arrayOfHTTPResponses) {
-  const cleanResponses = [];
-
-  arrayOfHTTPResponses.forEach((collectionOfResponses) => {
-    const cleanCollection = [];
-    collectionOfResponses.forEach((response) => {
-      const allCausasInResponse = []
-      const responseAsText = response.getContentText();
-      const cheeriodResponse = Cheerio.load(responseAsText);
-      const trimmedAndSplitResponse = cheeriodResponse('#dataIntegationRoom td').text().trim().split("\n");
-      for (i = 0; i < trimmedAndSplitResponse.length; i += 3) {
-        let salaObject = {
-          lugar: trimmedAndSplitResponse[i].trim(),
-          caratula: trimmedAndSplitResponse[i + 1].trim(),
-          id_ingreso: trimmedAndSplitResponse[i + 2].trim(),
-        };
-        allCausasInResponse.push(salaObject);
-      };
-      cleanCollection.push(allCausasInResponse);
-    });
-    cleanResponses.push(cleanCollection);
-  });
-
-  return cleanResponses;
-};
-
-function extractDatesAndRooms(relatorData) {
-  const fechaKey = 'fecha';
-  const salaKey = 'salaInt';
-
-  const fechasUnicas = relatorData.map((tribunal) => {
-    const uniqueDates = [...new Set(tribunal.map(obj => obj[fechaKey]))];
-    const activeSalas = [...new Set(tribunal.map(obj => obj[salaKey]))];
-
-    return { fechas: uniqueDates, salas: activeSalas };
-  });
-
-  return fechasUnicas;
-}
-
-function zipArrays(mainArray, dataToAppend, dataIdentifier) {
-  if (mainArray.length != dataToAppend.length) {
-    throw new Error("Arrays must be same size in order to zip them!")
-  }
-  mainArray.forEach((element, index) => {
-    element[dataIdentifier] = dataToAppend[index];
-  })
-
-  return mainArray;
-};
-
-function createRequestsForCausas(courtAndDateParameters) {
+function createCaseRequestsArray(courtAndDateParameters) {
   const causasHTTPRequests = [];
   courtAndDateParameters.forEach((parameter) => {
     const arrayOfRequestObjects = [];
@@ -256,6 +203,75 @@ function createRequestsForCausas(courtAndDateParameters) {
   return causasHTTPRequests;
 };
 
+function getData(requestsArray) {
+  const rawResponses = asynchronouslyFetchData(requestsArray);
+  const processedResponses = cleanAndProcessResponses(rawResponses);
+
+  return processedResponses;
+};
+
+function asynchronouslyFetchData(arrayOfRequestObjects) {
+  if (isArrayOfArrays(arrayOfRequestObjects)) {
+    const rawResponses = arrayOfRequestObjects.map(innerArrayOfRequests => UrlFetchApp.fetchAll(innerArrayOfRequests));
+
+    return rawResponses;
+  };
+  const rawResponses = UrlFetchApp.fetchAll(arrayOfRequestObjects);
+
+  return rawResponses;
+};
+
+function cleanAndProcessResponses(rawResponses) {
+  if (isArrayOfArrays(rawResponses)) {
+    const arrayTextResponses = rawResponses.map((array) => array.map((response) => response.getContentText()));
+    const cleanResponses = arrayTextResponses.map((textResponse) => cleanUpResponses(textResponse));
+
+    return cleanResponses;
+  }
+  const textResponses = rawResponses.map((raw) => raw.getContentText());
+  const cleanResponses = cleanUpResponses(textResponses);
+
+  return cleanResponses;
+};
+
+function cleanUpResponses(arrayOfContentTextResponses) {
+  const cleanResponses =
+
+    arrayOfContentTextResponses.map((response) => {
+      const isRoomResponse = /<table id="dataTypeTable"/.test(response);
+      const arrayOfProcessedObjects = [];
+      const outerRegex = /<div class="panel-body">([\s\S]*?)<\/div>/g;
+      const allOuterMatches = [...response.matchAll(outerRegex)];
+      const outerMatch = allOuterMatches[allOuterMatches.length - 1][1];
+      const regexForTable = /<td[^>]*>\s*(?:<a[^>]*>)?\s*(.*?)\s*(?:<\/a>)?\s*<\/td>/g;
+      const matches = [...outerMatch.matchAll(regexForTable)].map(match => match[1]);
+
+      for (let i = 0; i < matches.length; i += 3) {
+        if (isRoomResponse) {
+          const salaObject = {
+            fecha: matches[i],
+            salaStr: matches[i + 1],
+            salaInt: translateRoomNameToRoomNumber(matches[i + 1]),
+            relator: matches[i + 2],
+          };
+          arrayOfProcessedObjects.push(salaObject);
+        };
+        if (!isRoomResponse) {
+          const causaObject = {
+            lugar: matches[i],
+            caratula: matches[i + 1],
+            id_ingreso: matches[i + 2],
+          };
+          arrayOfProcessedObjects.push(causaObject);
+        };
+      };
+
+      return arrayOfProcessedObjects;
+    });
+
+  return cleanResponses;
+};
+
 function asynchronouslyFetchCausasData(arrayOfRequestObjects) {
   const responsesByCourt =
     arrayOfRequestObjects.map((requestsOfCourt) => UrlFetchApp.fetchAll(requestsOfCourt));
@@ -263,26 +279,53 @@ function asynchronouslyFetchCausasData(arrayOfRequestObjects) {
   return responsesByCourt;
 };
 
-function testGettingRelatores() {
+function testingScript() {
   const courts = getCourtParameters();
-  const roomRequests = createRequestsforRooms(courts);
-  const rooms = getRoomsData(roomRequests);
-  const dates = extractDatesAndRooms(rooms);
+  const roomRequests = createRoomRequestsArray(courts);
+  const rooms = getData(roomRequests);
+  const dates = extractParametersFromRoomsData(rooms);
   const courtsAndFechas = zipArrays(courts, dates, "weekInfo");
-  const causasRequests = createRequestsForCausas(courtsAndFechas);
-  const causasResponses = getCausasData(causasRequests);
-  
-  const relatorsWithCausas = rooms.map((relator, index) => {
-    const fused = zipArrays(relator, causasResponses[index], "causas");
+  const caseRequests = createCaseRequestsArray(courtsAndFechas);
+  const cases = getData(caseRequests);
+  const courtsRoomsCases = zipArrays(zipArrays(courts, rooms, "roomsData"), cases, "casesData");
 
-    return fused;
-  })
-  
+  return courtsRoomsCases;
+};
 
-  return relatorsWithCausas;
-}
+/* function getCausasData(requestsArray) {
+  const rawResponses = asynchronouslyFetchData(requestsArray);
+  const processedResponses = rawResponses.map((response) => cleanAndProcessResponses(response));
 
-function getLastRelevantFriday() {
+  return processedResponses;
+}; */
+
+/* function cleanUpCausasResponses(arrayOfHTTPResponses) {
+  const cleanResponses = [];
+
+  arrayOfHTTPResponses.forEach((collectionOfResponses) => {
+    const cleanCollection = [];
+    collectionOfResponses.forEach((response) => {
+      const allCausasInResponse = []
+      const responseAsText = response.getContentText();
+      const cheeriodResponse = Cheerio.load(responseAsText);
+      const trimmedAndSplitResponse = cheeriodResponse('#dataIntegationRoom td').text().trim().split("\n");
+      for (i = 0; i < trimmedAndSplitResponse.length; i += 3) {
+        let salaObject = {
+          lugar: trimmedAndSplitResponse[i].trim(),
+          caratula: trimmedAndSplitResponse[i + 1].trim(),
+          id_ingreso: trimmedAndSplitResponse[i + 2].trim(),
+        };
+        allCausasInResponse.push(salaObject);
+      };
+      cleanCollection.push(allCausasInResponse);
+    });
+    cleanResponses.push(cleanCollection);
+  });
+
+  return cleanResponses;
+}; */
+
+/* function getLastRelevantFriday() {
   const today = new Date();
   const relevantFriday = new Date(today);
   let dateOfLastFridayAfterThreePm = today.getDate() + (5 - 7 - today.getDay());
@@ -292,9 +335,9 @@ function getLastRelevantFriday() {
   relevantFriday.setDate(dateOfLastFridayAfterThreePm);
 
   return relevantFriday;
-};
+}; */
 
-function getDateParametersForRequests() {
+/* function getDateParametersForRequests() {
   const lastRelevantFriday = getLastRelevantFriday();
   let dateParameters = [];
   for (i = 0; i < 5; i++) {
@@ -305,9 +348,9 @@ function getDateParametersForRequests() {
   }
 
   return dateParameters;
-};
+}; */
 
-function createPayloadsForRequests(courtAndDateParameters) {
+/* function createPayloadsForRequests(courtAndDateParameters) {
   let arrayOfRequestObjects = [];
 
   courtParameters.forEach((court) => {
@@ -330,32 +373,31 @@ function createPayloadsForRequests(courtAndDateParameters) {
   });
 
   return arrayOfRequestObjects;
-};
+}; */
 
-function createRequests(payloadsArray) {
+/* function createRequests(payloadsArray) {
   let requestsArray = [];
   const requestUrl = "https://www.pjud.cl/ajax/Courts/constitutionOfRoomML/";
   const requestMethod = "post";
   const requestHeaders = {
-    "Accept": "*/*",
-    "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
-    "Connection": "keep-alive"
+"Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+  "Connection": "keep-alive"
   };
-  payloadsArray.forEach((requestPayload) => {
-    let requestObject = {
-      url: requestUrl,
-      headers: requestHeaders,
-      method: requestMethod,
-      payload: requestPayload.payload,
-    };
+payloadsArray.forEach((requestPayload) => {
+  let requestObject = {
+    url: requestUrl,
+    headers: requestHeaders,
+    method: requestMethod,
+    payload: requestPayload.payload,
+  };
 
-    requestsArray.push(requestObject);
-  });
+  requestsArray.push(requestObject);
+});
 
-  return [requestsArray, payloadsArray];
-};
+return [requestsArray, payloadsArray];
+}; */
 
-
+// ¬¬ RECORDING RESPONSES 
 
 function readyResponsesForSheet(cleanResponses) {
   const matrixForSheet = cleanResponses.map((cleanResponse) => {
@@ -376,23 +418,19 @@ function readyResponsesForSheet(cleanResponses) {
   return matrixForSheet;
 };
 
-// || RECORDING RESPONSES 
-
 function printArrayToSheet(matrixForSheet) {
   mainDB.getSheetByName("Todo").getRange(2, 1, matrixForSheet.length, matrixForSheet[1].length).setValues(matrixForSheet);
 };
 
-
-
-function testcreatePayloadsForRequests() {
+/* function testcreatePayloadsForRequests() {
   const courts = getCourtParameters();
   // const dates = getDateParametersForRequests();
   const dates = ["20/09/2023", "21/09/2023", "22/09/2023"];
   const payloads = createPayloadsForRequests(courts, dates);
   Logger.log("Se van a crear " + payloads.length.toString() + " llamadas a la API");
   const requests = createRequests(payloads);
-  // const relatorRequests = createRequestsforRooms(courts);
-  // const relatorResponses = asynchronouslyFetchRelatorData(relatorRequests);
+  // const relatorRequests = createRoomRequestsArrayms(courts);
+  // const relatorResponses = asynchronouslyFetchData(relatorRequests);
   const responses = asynchronouslyFetchTheData(requests);
   const cleanResponses = cleanUpResponses(responses);
   const arrayForPrinting = readyResponsesForSheet(cleanResponses);
@@ -416,7 +454,7 @@ function filterProcessedData() {
 
 function insertFilteredDataIntoCorrespondingSheet() {
 
-};
+}; */
 
 // PASOS:
 // 1. Crear los request 
@@ -444,5 +482,3 @@ function insertFilteredDataIntoCorrespondingSheet() {
 // 7. Filtrar la matriz de datos y pegar el resultado en las hojas por cortes
 // 8. Filtrar la matriz de datos y pegar el resultado en la hoja de información filtrada
 // 9. Aplicar formato a las hojas 
-
-
