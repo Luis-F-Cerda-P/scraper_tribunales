@@ -70,6 +70,13 @@ function translateRoomNameToRoomNumber(roomNameString) {
   return roomNumber;
 };
 
+function sendNotification() {
+  GmailApp.sendEmail(
+    "rosamapcl@gmail.com",
+    "Notificación",
+    "Se actualizó la información de salas y causas de la semana entrante. Ver la hoja Todo-2 en el siguiente link: https://docs.google.com/spreadsheets/d/1b2Sf_h5-6WuUDW51AovuNHm5xYEMG8aX7QdZ87BuY1o/");
+};
+
 // ¬¬ WEB-SCRAPING - MAIN FUNCTIONALITY 
 
 /**
@@ -279,165 +286,37 @@ function asynchronouslyFetchCausasData(arrayOfRequestObjects) {
   return responsesByCourt;
 };
 
-function testingScript() {
-  const courts = getCourtParameters();
-  const roomRequests = createRoomRequestsArray(courts);
-  const rooms = getData(roomRequests);
-  const dates = extractParametersFromRoomsData(rooms);
-  const courtsAndFechas = zipArrays(courts, dates, "weekInfo");
-  const caseRequests = createCaseRequestsArray(courtsAndFechas);
-  const cases = getData(caseRequests);
-  const courtsRoomsCases = zipArrays(zipArrays(courts, rooms, "roomsData"), cases, "casesData");
-
-  return courtsRoomsCases;
-};
-
-/* function getCausasData(requestsArray) {
-  const rawResponses = asynchronouslyFetchData(requestsArray);
-  const processedResponses = rawResponses.map((response) => cleanAndProcessResponses(response));
-
-  return processedResponses;
-}; */
-
-/* function cleanUpCausasResponses(arrayOfHTTPResponses) {
-  const cleanResponses = [];
-
-  arrayOfHTTPResponses.forEach((collectionOfResponses) => {
-    const cleanCollection = [];
-    collectionOfResponses.forEach((response) => {
-      const allCausasInResponse = []
-      const responseAsText = response.getContentText();
-      const cheeriodResponse = Cheerio.load(responseAsText);
-      const trimmedAndSplitResponse = cheeriodResponse('#dataIntegationRoom td').text().trim().split("\n");
-      for (i = 0; i < trimmedAndSplitResponse.length; i += 3) {
-        let salaObject = {
-          lugar: trimmedAndSplitResponse[i].trim(),
-          caratula: trimmedAndSplitResponse[i + 1].trim(),
-          id_ingreso: trimmedAndSplitResponse[i + 2].trim(),
-        };
-        allCausasInResponse.push(salaObject);
-      };
-      cleanCollection.push(allCausasInResponse);
-    });
-    cleanResponses.push(cleanCollection);
-  });
-
-  return cleanResponses;
-}; */
-
-/* function getLastRelevantFriday() {
-  const today = new Date();
-  const relevantFriday = new Date(today);
-  let dateOfLastFridayAfterThreePm = today.getDate() + (5 - 7 - today.getDay());
-  if ((today.getHours() >= 15 && today.getDay() === 5) || (today.getDay() === 6)) {
-    dateOfLastFridayAfterThreePm += 7;
-  };
-  relevantFriday.setDate(dateOfLastFridayAfterThreePm);
-
-  return relevantFriday;
-}; */
-
-/* function getDateParametersForRequests() {
-  const lastRelevantFriday = getLastRelevantFriday();
-  let dateParameters = [];
-  for (i = 0; i < 5; i++) {
-    const day = new Date(lastRelevantFriday);
-    day.setDate(lastRelevantFriday.getDate() + 3 + i);
-    const dayInChileanFormatString = day.toLocaleDateString("es", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "America/Santiago" });
-    dateParameters.push(dayInChileanFormatString);
-  }
-
-  return dateParameters;
-}; */
-
-/* function createPayloadsForRequests(courtAndDateParameters) {
-  let arrayOfRequestObjects = [];
-
-  courtParameters.forEach((court) => {
-    for (i = 1; i <= court.numSala; i++) {
-      dateParameters.forEach((dateParameter) => {
-        let request = {
-          payload: {
-            "numSala": i,
-            "codCorte": court.codCorte,
-            "tipoTabla": 3,
-            "fecha": dateParameter,
-            "nomSala": "",
-            "condicion": court.condicion
-          },
-          nomCorte: court["Nombre Corte"],
-        };
-        arrayOfRequestObjects.push(request);
-      });
-    };
-  });
-
-  return arrayOfRequestObjects;
-}; */
-
-/* function createRequests(payloadsArray) {
-  let requestsArray = [];
-  const requestUrl = "https://www.pjud.cl/ajax/Courts/constitutionOfRoomML/";
-  const requestMethod = "post";
-  const requestHeaders = {
-"Accept-Language": "en-US,en;q=0.9,es;q=0.8",
-  "Connection": "keep-alive"
-  };
-payloadsArray.forEach((requestPayload) => {
-  let requestObject = {
-    url: requestUrl,
-    headers: requestHeaders,
-    method: requestMethod,
-    payload: requestPayload.payload,
-  };
-
-  requestsArray.push(requestObject);
-});
-
-return [requestsArray, payloadsArray];
-}; */
-
 // ¬¬ RECORDING RESPONSES 
 
-function readyResponsesForSheet(cleanResponses) {
-  const matrixForSheet = cleanResponses.map((cleanResponse) => {
-    return [
-      cleanResponse.fecha,
-      cleanResponse.nomCorte,
-      cleanResponse.lugar,
-      cleanResponse.caratula,
-      cleanResponse.id_ingreso,
-      "-proximamente-",
-      cleanResponse.numSala,
-      "",
-      "",
-      "",
-    ]
+function readyResponsesForSheet(courtsRoomsCases) {
+  const matrixForSheet = [];
+  courtsRoomsCases.forEach((court) => {
+    court.casesData.forEach((casesByRoom, cbrIndex) => {
+      casesByRoom.forEach((singleCase) => {
+        const row = [
+          court.roomsData[cbrIndex].fecha,
+          court.courtData["Nombre Corte"],
+          singleCase.lugar,
+          singleCase.caratula,
+          singleCase.id_ingreso,
+          court.roomsData[cbrIndex].relator,
+          court.roomsData[cbrIndex].salaInt,
+          "",
+          "",
+          "",
+        ];
+
+        matrixForSheet.push(row);
+      });
+    });
+
   });
 
-  return matrixForSheet;
+  return matrixForSheet
 };
 
 function printArrayToSheet(matrixForSheet) {
-  mainDB.getSheetByName("Todo").getRange(2, 1, matrixForSheet.length, matrixForSheet[1].length).setValues(matrixForSheet);
-};
-
-/* function testcreatePayloadsForRequests() {
-  const courts = getCourtParameters();
-  // const dates = getDateParametersForRequests();
-  const dates = ["20/09/2023", "21/09/2023", "22/09/2023"];
-  const payloads = createPayloadsForRequests(courts, dates);
-  Logger.log("Se van a crear " + payloads.length.toString() + " llamadas a la API");
-  const requests = createRequests(payloads);
-  // const relatorRequests = createRoomRequestsArrayms(courts);
-  // const relatorResponses = asynchronouslyFetchData(relatorRequests);
-  const responses = asynchronouslyFetchTheData(requests);
-  const cleanResponses = cleanUpResponses(responses);
-  const arrayForPrinting = readyResponsesForSheet(cleanResponses);
-  Logger.log("Se van a imprimir " + arrayForPrinting.length.toString() + " filas a la hoja 'Todo'");
-  printArrayToSheet(arrayForPrinting);
-
-  return arrayForPrinting;
+  mainDB.getSheetByName("Todo-2").getRange(2, 1, matrixForSheet.length, matrixForSheet[1].length).setValues(matrixForSheet);
 };
 
 function createThisWeeksSpreadsheet() {
@@ -454,31 +333,90 @@ function filterProcessedData() {
 
 function insertFilteredDataIntoCorrespondingSheet() {
 
-}; */
+}; 
 
-// PASOS:
-// 1. Crear los request 
-//   a. Fechas:
-//     a.1 Proximo lunes a próximo viernes desde la fecha de ejecución
-//     a.2 Deben ser un string en formato chileno
-//   b. Salas (número, código, condición):
-//     b.1 Todas las que aparezcan enumeradas en la base de datos
-//   c. Retornar un array de objetos. Cada objeto es un request 
-// 2. Llamar a la API asíncronicamente con 'urlFetchAll'
-// 3. Procesar las respuestas (limpiar)
-//   a. Extraer la tabla que menciona al relator
-//     a.1 Extrar el nombre del relator
-//   b. Extraer la tabla que menciona las causas
-//     b.1 Extraer el número de causa
-//     b.2 Extraer la carátula
-//     b.3 Extraer el código de ingreso de la causa
-//   c. Retornar array de objetos. Cada objeto es una combinación posible de fecha y sala
-// 4. Crear un archivo Sheets en Google Drive que enumere todas las causas con sala asignada para esa semana 
-//   a. En ese archivo, crear una hoja general donde estén todos los datos obtenidos
-//   b. En ese archivo, crear una hoja por cada corte 
-//   c. En ese archivo, crear una hoja para la información filtrada
-// 5. Construir a partir del objeto de respuestas construir una matriz de datos
-// 6. Pegar la matriz de datos en la hoja correspondiente
-// 7. Filtrar la matriz de datos y pegar el resultado en las hojas por cortes
-// 8. Filtrar la matriz de datos y pegar el resultado en la hoja de información filtrada
-// 9. Aplicar formato a las hojas 
+// ¬¬ SCRIPTED EXECUTION 
+
+function testingScript() {
+  const courts = getCourtParameters();
+  const roomRequests = createRoomRequestsArray(courts);
+  const rooms = getData(roomRequests);
+  const dates = extractParametersFromRoomsData(rooms);
+  const courtsAndFechas = zipArrays(courts, dates, "weekInfo");
+  const caseRequests = createCaseRequestsArray(courtsAndFechas);
+  const cases = getData(caseRequests);
+  const courtsRoomsCases =
+    zipArrays(
+      zipArrays(courts, rooms, "roomsData"), cases, "casesData"
+    );
+
+  return courtsRoomsCases;
+};
+
+function partiallyTestingScript() {
+  const courts = getCourtParameters();
+  const roomRequests = createRoomRequestsArray(courts);
+  const rooms = getData(roomRequests);
+  const dates = extractParametersFromRoomsData(rooms);
+  const courtsAndFechas = zipArrays(courts, dates, "weekInfo");
+  const caseRequests = createCaseRequestsArray(courtsAndFechas);
+  const cases = getData(caseRequests);
+  const courtsRoomsCases =
+    zipArrays(
+      zipArrays(courts, rooms, "roomsData"), cases, "casesData"
+    );
+
+  const dataForPrinting = readyResponsesForSheet(courtsRoomsCases);
+  
+  printArrayToSheet(dataForPrinting);
+  // sendNotification();
+
+  return dataForPrinting;
+};
+
+// ¬¬ PENDING FEATURES PLANIFICATION 
+
+/* PASOS:
+CREACION DE ARCHIVOS 
+
+1. Desde la info de la semana obtener el día mínimo y máximo hábil
+  1.a Tomar el array de strings de week info, ej: ["20/09/2023", "21/09/2023", "22/09/2023"]
+  1.b Cada string splitearla en los "/", ej: [["20", "09", "2023"], [...], [...]]
+  1.c Revertir cada array interno, ej: [["2023", "09","20"], [...], [...]] 
+  1.d Joinear ese array con "-" para tener una string "2023-09-20"
+  1.e Ordenar el array que contiene las fechas por sus nuevos valores, que son strings ordenables. 
+  1.f Día máximo: el primer index del array / Día mínimo: el último index del array. 
+2. Ubicar y copiar un template de Spreadsheet con el formato correcto
+3. Crear en una carpeta predeterminada una copiar del Spreadsheet base, dándole como título "Sem. DD-MM-AAAA al DD-MM-AAAA "
+4. La carpeta predeterminada podría estar amarrada al mes. Estructura de ejemplo: 
+    2023
+      Enero
+        Sem. XX-XX-XXXX al XX-XX-XXXX
+        Sem. XX-XX-XXXX al XX-XX-XXXX
+        Sem. XX-XX-XXXX al XX-XX-XXXX
+        Febrero
+        Sem. XX-XX-XXXX al XX-XX-XXXX
+        Sem. XX-XX-XXXX al XX-XX-XXXX
+        Sem. XX-XX-XXXX al XX-XX-XXXX
+        Sem. XX-XX-XXXX al XX-XX-XXXX
+5. Luego de crear los archivos y carpetas necesario, imprimir las filas necesarias
+
+NO REDUNDANCIA EN LAS PETICIONES: 
+
+1. Guardar en el ScriptProperties valores de la semana, podría ser también usando los valores mínimos y máximos de fecha que se describen en "CREACION DE ARCHIVOS", paso 1
+2. Al momento de iniciar una ejecución, chequear ese script properties contra la fecha actual, o contra el resultado de llamar a la API de salas por tribunal, puesto que esta API responde también con las fechas. 
+3. Si los valores concuerdan, no se procede. Si no concuerdan, se procede 
+
+REEMPLAZAR O COMPLEMENTAR EL TRATAMIENTO QUE SE HACE DE LA RESPUESTA HTML 
+
+1. Actualmente la respuesta se procesa por medio de Regex
+2. La función contempla únicamente una respuesta exitosa del servidor. Los días viernes hasta las 17 horas pareciera que obtener dicha respuesta no es posible. 
+3. El tratamiento con Regex trae como efecto secundario que las entidades reservadas del HTML (por ejemplo el caracter '&') lleguen a nuestro texto con el código que los representa, lo que reduce la legibilidad y usabilidad de las respuestas. Esto porque el HTML que recibimos lo tratamos directamente como una string, de manera que las representaciones que hace HTML de sus entidades no es decodificada
+4. Pareciera que la solución más simple a esto es usar el XmlService en alguna etapa del proceso, para decodificar esas entidades. 
+
+FILTRADO DE LA INFORMACION
+
+1. A partir del array final, que se intentará pegar en la Spreadsheet, usar funciones de filtro (quizá usando Regex) que consigan la información relevante por medio de una lista de términos de búsqueda aprobados y revisados que debería ser fácil de extender según vayamos aprendiendo
+2. Para este fin serán útiles las funciones que ya se escribieron para remover las tildes del texto, por ejemplo. 
+
+*/
